@@ -1,0 +1,14 @@
+# embed build -f embed.yaml
+---
+
+pkg: embed
+path: build/embed.go
+compress: gz
+
+items:
+  - name: Config1
+    file: conf/config1.yml
+
+  - name: Config2
+    file: conf/config2.yml
+

@@ -1,7 +1,26 @@
-# ide
-/.vscode/
-/.idea/
-/*.iml
+# System
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
 
-# some files or directories
+# IDEs
+/*.iml
+/.idea/
+/.vscode/
+
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Others
+*.log
+*.tmp
+*.test
+*.out
+
+# Dependency directories
 /vendor/
