@@ -1,0 +1,7 @@
+# ide
+/.vscode/
+/.idea/
+/*.iml
+
+# some files or directories
+/vendor/
