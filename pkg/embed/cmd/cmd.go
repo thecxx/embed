@@ -3,6 +3,7 @@ package cmd
 import (
 	"github.com/spf13/cobra"
 	"github.com/thecxx/embed/pkg/embed/cmd/build"
+	"github.com/thecxx/embed/pkg/embed/cmd/initialize"
 )
 
 var (
@@ -23,7 +24,10 @@ func NewCommand() *cobra.Command {
 	}
 
 	// Sub commands
-	cmd.AddCommand(build.NewCommand())
+	cmd.AddCommand(
+		initialize.NewCommand(),
+		build.NewCommand(),
+	)
 
 	return cmd
 }

@@ -43,11 +43,7 @@ func Run(cmd *cobra.Command) error {
 	}
 
 	// Execute build
-	if err := service.Embed.Build(context.Background()); err != nil {
-		return err
-	}
-
-	return nil
+	return service.Embed.Build(context.Background())
 }
 
 func exitIfError(err error, code int) {

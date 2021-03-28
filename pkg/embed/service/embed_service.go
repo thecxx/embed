@@ -6,9 +6,13 @@ import (
 	"context"
 	"crypto/md5"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
+	"os"
+	"path"
+	"sort"
 
 	"github.com/thecxx/embed/pkg/embed/asset/config"
 )
@@ -23,57 +27,114 @@ func NewEmbedService() *EmbedService {
 	return new(EmbedService)
 }
 
+func (e *EmbedService) Init(ctx context.Context, file string) error {
+	return ioutil.WriteFile(file, ([]byte)(`# embed build [-f embed.yaml]
+
+---
+pkg: embed
+
+path: embed/embed.go
+
+compress: gz
+
+items:
+  - name: TestFile
+    file: test.txt
+
+`), 0644)
+}
+
 func (e *EmbedService) Build(ctx context.Context) error {
 
-	buffer := bytes.NewBuffer(nil)
+	var (
+		vars    = make(map[string]string)
+		bufs    = make(map[string][]byte)
+		buffer  = bytes.NewBuffer(nil)
+		imports = []string{"io", "io/ioutil"}
+	)
+
+	switch config.Embed.Compress {
+	// gzip
+	case "gzip", "gz":
+		imports = append(imports, "compress/gzip")
+	// Not supported
+	default:
+		return errors.New("compress method not supported")
+	}
+
+	// Sort by string
+	sort.Strings(imports)
+
+	for _, f := range config.Embed.Items {
+		data, sign, err := e.loadFile(f.File)
+		if err != nil {
+			return err
+		}
+		if sign == "" || len(data) <= 0 {
+			sign, data = "empty", make([]byte, 0)
+		}
+		if _, ok := bufs[sign]; !ok {
+			bufs[sign] = data
+		}
+
+		b := fmt.Sprintf("&buffer{data: _%s, index: 0}", sign)
+
+		if len(data) > 0 {
+			switch config.Embed.Compress {
+			// gzip
+			case "gzip", "gz":
+				b = fmt.Sprintf("gzipReader(%s)", b)
+			}
+		}
+
+		vars[f.Name] = fmt.Sprintf("file{\"%s\", %s}", f.File, b)
+	}
 
 	e.emitPackage(buffer, config.Embed.Package)
-	e.emitImport(buffer, []string{
-		"compress/gzip",
-		"io",
-		"io/ioutil",
-	})
+	e.emitImport(buffer, imports)
 
-	if len(config.Embed.Items) > 0 {
-
-		storage := bytes.NewBuffer(nil)
-
-		fmt.Fprintf(buffer, "var(\n")
-		fmt.Fprintf(storage, "var(\n")
-		for _, f := range config.Embed.Items {
-			buf := bytes.NewBuffer(nil)
-			com := gzip.NewWriter(buf)
-
-			data, err := ioutil.ReadFile(f.File)
-			if err != nil {
-				return err
-			}
-			com.Write(data)
-			com.Flush()
-
-			fmt.Fprintf(storage, "    %s_data = []byte{", f.Name)
-
-			for i, c := range buf.Bytes() {
-				if i+1 >= buf.Len() {
-					fmt.Fprintf(storage, "0x%x", c)
-				} else {
-					fmt.Fprintf(storage, "0x%x, ", c)
-				}
-			}
-			fmt.Fprintf(storage, "}\n")
-
-			fmt.Fprintf(buffer, "    %s = file{\"%s\", gzipReader(&buffer{data: %s_data, index: 0})}\n", f.Name, f.File, f.Name)
-
+	if len(vars) > 0 {
+		fmt.Fprintf(buffer, "var (\n")
+		for n, assign := range vars {
+			fmt.Fprintf(buffer, "    %s = %s\n", n, assign)
 		}
 		fmt.Fprintf(buffer, ")\n\n")
-		fmt.Fprintf(storage, ")\n\n")
+	}
 
-		fmt.Fprintf(buffer, "%s\n", storage.String())
+	if len(bufs) > 0 {
+		fmt.Fprintf(buffer, "var (\n")
+		for sign, data := range bufs {
+			if len(data) > 0 {
+				buf := bytes.NewBuffer(nil)
+				com := gzip.NewWriter(buf)
+
+				com.Write(data)
+				com.Flush()
+
+				fmt.Fprintf(buffer, "    _%s = []byte{", sign)
+
+				for i, c := range buf.Bytes() {
+					if i+1 >= buf.Len() {
+						fmt.Fprintf(buffer, "0x%x", c)
+					} else {
+						fmt.Fprintf(buffer, "0x%x, ", c)
+					}
+				}
+
+				fmt.Fprintf(buffer, "}\n")
+			} else {
+				fmt.Fprintf(buffer, "    _%s = []byte{}\n", sign)
+			}
+		}
+		fmt.Fprintf(buffer, ")\n\n")
 	}
 
 	e.emitTemplate(buffer)
 
-	return ioutil.WriteFile(config.Embed.Path, buffer.Bytes(), 0777)
+	if err := os.MkdirAll(path.Dir(config.Embed.Path), 0644); err != nil {
+		return err
+	}
+	return ioutil.WriteFile(config.Embed.Path, buffer.Bytes(), 0644)
 
 }
 
@@ -83,7 +144,7 @@ func (e *EmbedService) emitPackage(buffer io.Writer, name string) {
 
 func (e *EmbedService) emitImport(buffer io.Writer, packages []string) {
 	if len(packages) > 0 {
-		fmt.Fprintf(buffer, "import(\n")
+		fmt.Fprintf(buffer, "import (\n")
 		for _, pkg := range packages {
 			fmt.Fprintf(buffer, "    \"%s\"\n", pkg)
 		}
@@ -91,8 +152,20 @@ func (e *EmbedService) emitImport(buffer io.Writer, packages []string) {
 	}
 }
 
+func (e *EmbedService) emitVariable(buffer io.Writer, name, filename, buf string, cast string) {
+	buf = fmt.Sprintf("&buffer{data: %s, index: 0}", buf)
+	if len(cast) >= 0 {
+		buf = fmt.Sprintf("%s(%s)", cast, buf)
+	}
+	fmt.Fprintf(buffer, "    %s = file{\"%s\", %s}\n", name, filename, buf)
+}
+
+func (e *EmbedService) emitBuffer(buffer io.Writer, name string, data []byte) {
+
+}
+
 func (e *EmbedService) emitTemplate(buffer io.Writer) {
-	tpl := `type buffer struct {
+	fmt.Fprintf(buffer, "%s\n", `type buffer struct {
 	data  []byte
 	index int64
 }
@@ -111,23 +184,6 @@ func (b *buffer) Read(p []byte) (int, error) {
 	return n, nil
 }
 
-type emptyBuffer struct {
-}
-
-func (b *emptyBuffer) Read([]byte) (int, error) {
-	return 0, io.EOF
-}
-
-var invalidBuffer = new(emptyBuffer)
-
-func gzipReader(in io.Reader) io.Reader {
-	r, err := gzip.NewReader(in)
-	if err != nil {
-		return invalidBuffer
-	}
-	return r
-}
-
 type file struct {
 	file   string
 	reader io.Reader
@@ -140,8 +196,14 @@ func (r *file) Read(buffer []byte) (int, error) {
 func (r *file) ReadAll() ([]byte, error) {
 	return ioutil.ReadAll(r.reader)
 }
-`
-	fmt.Fprintf(buffer, "%s\n", tpl)
+
+func (r *file) Bytes() []byte {
+	if b, err := ioutil.ReadAll(r.reader); err == nil {
+		return b
+	}
+	return make([]byte, 0)
+}
+`)
 }
 
 func (e *EmbedService) loadFile(filename string) ([]byte, string, error) {
