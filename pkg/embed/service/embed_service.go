@@ -12,7 +12,8 @@ import (
 	"io/ioutil"
 	"os"
 	"path"
-	"sort"
+
+	"github.com/thecxx/embed/pkg/pack"
 
 	"github.com/thecxx/embed/pkg/embed/asset/config"
 )
@@ -53,28 +54,39 @@ func (e *EmbedService) Build(ctx context.Context) error {
 		imports = []string{"io", "io/ioutil"}
 	)
 
+	var (
+		sf       = pack.NewSourceFile(config.Embed.Package)
+		compress = ""
+	)
+
+	sf.Import("io")
+	sf.Import("io/ioutil")
+
 	switch config.Embed.Compress {
 	// gzip
 	case "gzip", "gz":
-		imports = append(imports, "compress/gzip")
+		compress = "gzip"
+		sf.Import("compress/gzip")
+		sf.DeclareGzipReader()
+
 	// Not supported
 	default:
 		return errors.New("compress method not supported")
 	}
 
-	// Sort by string
-	sort.Strings(imports)
-
 	for _, f := range config.Embed.Items {
+		// Load file
 		data, sign, err := e.loadFile(f.File)
 		if err != nil {
 			return err
 		}
-		if sign == "" || len(data) <= 0 {
+		if len(data) <= 0 || sign == "" {
 			sign, data = "empty", make([]byte, 0)
 		}
 		if _, ok := bufs[sign]; !ok {
 			bufs[sign] = data
+			// Save bytes
+			sf.DeclareVar(pack.Variable{Name: fmt.Sprintf("_%s", sign), Assign: "[]byte{}"})
 		}
 
 		b := fmt.Sprintf("&buffer{data: _%s, index: 0}", sign)

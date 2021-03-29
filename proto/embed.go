@@ -40,12 +40,10 @@ func (b *emptyBuffer) Read([]byte) (int, error) {
 	return 0, io.EOF
 }
 
-var invalidBuffer = new(emptyBuffer)
-
 func gzipReader(in io.Reader) io.Reader {
 	r, err := gzip.NewReader(in)
 	if err != nil {
-		return invalidBuffer
+		return new(emptyBuffer)
 	}
 	return r
 }
