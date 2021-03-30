@@ -2,11 +2,16 @@
 ---
 pkg: embed
 
-path: build/embed.go
-
 compress: gz
+
+archive: true
+
+path: embed/embed.go
 
 items:
   - name: TestFile
-    file: conf/test.txt
+    file: tests/test.txt
+
+  - name: EmptyFile
+    file: tests/empty.txt
 

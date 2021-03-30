@@ -6,8 +6,9 @@ import (
 )
 
 type Variable struct {
-	Name   string
-	Assign string
+	Name    string
+	Assign  string
+	Comment string
 }
 
 type VariableStmt struct {
@@ -20,7 +21,11 @@ func (vs *VariableStmt) Emit(buffer io.Writer) {
 	}
 	vs.begin(buffer)
 	for i := 0; i < len(vs.Vars); i++ {
-		fmt.Fprintf(buffer, "\t%s = %s\n", vs.Vars[i].Name, vs.Vars[i].Assign)
+		v := vs.Vars[i]
+		if len(v.Comment) > 0 {
+			fmt.Fprintf(buffer, "\t// %s\n", v.Comment)
+		}
+		fmt.Fprintf(buffer, "\t%s = %s\n", v.Name, v.Assign)
 	}
 	vs.end(buffer)
 }

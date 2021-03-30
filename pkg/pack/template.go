@@ -5,23 +5,12 @@ import (
 	"io"
 )
 
-var tplBuffer = `type buffer struct {
-	data  []byte
-	index int64
-}
+var tplFileReader = `var (
+	_ffffffffffffffffffffffffffffffff = make([]byte, 0)
+)
 
-func (b *buffer) Read(p []byte) (int, error) {
-	if len(b.data) <= 0 {
-		return 0, io.EOF
-	}
-	if b.index >= int64(len(b.data)) {
-		return 0, io.EOF
-	}
-	// Copy
-	n := copy(p, b.data[b.index:])
-	b.index += int64(n)
-
-	return n, nil
+func bufferReader(b []byte) io.Reader {
+	return bytes.NewReader(b)
 }
 
 type file struct {
@@ -38,10 +27,11 @@ func (r *file) ReadAll() ([]byte, error) {
 }
 
 func (r *file) Bytes() []byte {
-	if b, err := ioutil.ReadAll(r.reader); err == nil {
-		return b
+	b, err := ioutil.ReadAll(r.reader)
+	if err != nil {
+		return make([]byte, 0)
 	}
-	return make([]byte, 0)
+	return b
 }`
 
 var tplGzipReader = `type emptyBuffer struct {
@@ -51,8 +41,10 @@ func (b *emptyBuffer) Read([]byte) (int, error) {
 	return 0, io.EOF
 }
 
-func gzipReader(in io.Reader) io.Reader {
-	r, err := gzip.NewReader(in)
+func gzipReader(b []byte) io.Reader {
+	r, err := gzip.NewReader(
+		bufferReader(b),
+	)
 	if err != nil {
 		return new(emptyBuffer)
 	}

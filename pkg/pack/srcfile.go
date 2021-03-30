@@ -43,6 +43,10 @@ func (sf *SourceFile) DeclareGzipReader() {
 	sf.AddStmt(&TemplateStmt{tplGzipReader})
 }
 
+func (sf *SourceFile) DeclareFileReader() {
+	sf.AddStmt(&TemplateStmt{tplFileReader})
+}
+
 func (sf *SourceFile) Bytes() []byte {
 	sf.build()
 	return sf.buffer.Bytes()
@@ -68,9 +72,6 @@ func (sf *SourceFile) build() {
 	for _, stmt := range sf.stmts {
 		stmt.Emit(sf.buffer)
 	}
-	// Buffer template
-	tpl := &TemplateStmt{tplBuffer}
-	tpl.Emit(sf.buffer)
 }
 
 func (sf *SourceFile) AddStmt(stmt Statement) {

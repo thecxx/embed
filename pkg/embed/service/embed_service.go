@@ -8,7 +8,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"os"
 	"path"
@@ -48,17 +47,15 @@ items:
 func (e *EmbedService) Build(ctx context.Context) error {
 
 	var (
-		vars    = make(map[string]string)
-		bufs    = make(map[string][]byte)
-		buffer  = bytes.NewBuffer(nil)
-		imports = []string{"io", "io/ioutil"}
-	)
-
-	var (
-		sf       = pack.NewSourceFile(config.Embed.Package)
 		compress = ""
+		bufs     = make(map[string][]byte)
+		vars1    = make([]pack.Variable, 0)
+		vars2    = make([]pack.Variable, 0)
+		sf       = pack.NewSourceFile(config.Embed.Package)
+		arch     = pack.NewSourceFile(config.Embed.Package)
 	)
 
+	sf.Import("bytes")
 	sf.Import("io")
 	sf.Import("io/ioutil")
 
@@ -68,7 +65,9 @@ func (e *EmbedService) Build(ctx context.Context) error {
 		compress = "gzip"
 		sf.Import("compress/gzip")
 		sf.DeclareGzipReader()
-
+	// Empty
+	case "":
+		// Nothing to do
 	// Not supported
 	default:
 		return errors.New("compress method not supported")
@@ -80,142 +79,76 @@ func (e *EmbedService) Build(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		if len(data) <= 0 || sign == "" {
-			sign, data = "empty", make([]byte, 0)
-		}
-		if _, ok := bufs[sign]; !ok {
-			bufs[sign] = data
-			// Save bytes
-			sf.DeclareVar(pack.Variable{Name: fmt.Sprintf("_%s", sign), Assign: "[]byte{}"})
-		}
+		if len(data) <= 0 {
+			sign, data = "ffffffffffffffffffffffffffffffff", make([]byte, 0)
+		} else {
+			if _, ok := bufs[sign]; !ok {
+				bufs[sign] = data
 
-		b := fmt.Sprintf("&buffer{data: _%s, index: 0}", sign)
+				var (
+					raw []byte
+					tmp bytes.Buffer
+				)
+				// Save bytes
+				if len(compress) > 0 {
+					writer := gzip.NewWriter(&tmp)
+					writer.Write(data)
+					writer.Flush()
+					writer.Close()
 
-		if len(data) > 0 {
-			switch config.Embed.Compress {
-			// gzip
-			case "gzip", "gz":
-				b = fmt.Sprintf("gzipReader(%s)", b)
-			}
-		}
-
-		vars[f.Name] = fmt.Sprintf("file{\"%s\", %s}", f.File, b)
-	}
-
-	e.emitPackage(buffer, config.Embed.Package)
-	e.emitImport(buffer, imports)
-
-	if len(vars) > 0 {
-		fmt.Fprintf(buffer, "var (\n")
-		for n, assign := range vars {
-			fmt.Fprintf(buffer, "    %s = %s\n", n, assign)
-		}
-		fmt.Fprintf(buffer, ")\n\n")
-	}
-
-	if len(bufs) > 0 {
-		fmt.Fprintf(buffer, "var (\n")
-		for sign, data := range bufs {
-			if len(data) > 0 {
-				buf := bytes.NewBuffer(nil)
-				com := gzip.NewWriter(buf)
-
-				com.Write(data)
-				com.Flush()
-
-				fmt.Fprintf(buffer, "    _%s = []byte{", sign)
-
-				for i, c := range buf.Bytes() {
-					if i+1 >= buf.Len() {
-						fmt.Fprintf(buffer, "0x%x", c)
-					} else {
-						fmt.Fprintf(buffer, "0x%x, ", c)
-					}
+					raw = tmp.Bytes()
+				} else {
+					raw = data
 				}
-
-				fmt.Fprintf(buffer, "}\n")
-			} else {
-				fmt.Fprintf(buffer, "    _%s = []byte{}\n", sign)
+				vars1 = append(vars1, pack.Variable{
+					Name:   fmt.Sprintf("_%s", sign),
+					Assign: e.formatBytes(raw),
+				})
 			}
 		}
-		fmt.Fprintf(buffer, ")\n\n")
+
+		var buf string
+		if len(data) > 0 && len(compress) > 0 {
+			buf = fmt.Sprintf("%sReader(_%s)", compress, sign)
+		} else {
+			buf = fmt.Sprintf("bufferReader(_%s)", sign)
+		}
+		// Save buffer
+		vars2 = append(vars2, pack.Variable{
+			Name:   f.Name,
+			Assign: fmt.Sprintf("file{\"%s\", %s}", f.File, buf),
+			// Comment: fmt.Sprintf("File: %s", f.File),
+		})
 	}
 
-	e.emitTemplate(buffer)
+	if len(vars1) > 0 {
+		if config.Embed.Archive {
+			arch.DeclareVar(vars1...)
+		} else {
+			sf.DeclareVar(vars1...)
+		}
+	}
 
-	if err := os.MkdirAll(path.Dir(config.Embed.Path), 0644); err != nil {
+	if len(vars2) > 0 {
+		sf.DeclareVar(vars2...)
+	}
+
+	sf.DeclareFileReader()
+
+	dir := path.Dir(config.Embed.Path)
+
+	err := os.MkdirAll(dir, 0644)
+	if err != nil {
 		return err
 	}
-	return ioutil.WriteFile(config.Embed.Path, buffer.Bytes(), 0644)
 
-}
-
-func (e *EmbedService) emitPackage(buffer io.Writer, name string) {
-	fmt.Fprintf(buffer, "package %s\n\n", name)
-}
-
-func (e *EmbedService) emitImport(buffer io.Writer, packages []string) {
-	if len(packages) > 0 {
-		fmt.Fprintf(buffer, "import (\n")
-		for _, pkg := range packages {
-			fmt.Fprintf(buffer, "    \"%s\"\n", pkg)
-		}
-		fmt.Fprintf(buffer, ")\n\n")
+	err = ioutil.WriteFile(dir+"/archive.go", arch.Bytes(), 0644)
+	if err != nil {
+		return err
 	}
-}
 
-func (e *EmbedService) emitVariable(buffer io.Writer, name, filename, buf string, cast string) {
-	buf = fmt.Sprintf("&buffer{data: %s, index: 0}", buf)
-	if len(cast) >= 0 {
-		buf = fmt.Sprintf("%s(%s)", cast, buf)
-	}
-	fmt.Fprintf(buffer, "    %s = file{\"%s\", %s}\n", name, filename, buf)
-}
+	return ioutil.WriteFile(config.Embed.Path, sf.Bytes(), 0644)
 
-func (e *EmbedService) emitBuffer(buffer io.Writer, name string, data []byte) {
-
-}
-
-func (e *EmbedService) emitTemplate(buffer io.Writer) {
-	fmt.Fprintf(buffer, "%s\n", `type buffer struct {
-	data  []byte
-	index int64
-}
-
-func (b *buffer) Read(p []byte) (int, error) {
-	if len(b.data) <= 0 {
-		return 0, io.EOF
-	}
-	if b.index >= int64(len(b.data)) {
-		return 0, io.EOF
-	}
-	// Copy
-	n := copy(p, b.data[b.index:])
-	b.index += int64(n)
-
-	return n, nil
-}
-
-type file struct {
-	file   string
-	reader io.Reader
-}
-
-func (r *file) Read(buffer []byte) (int, error) {
-	return r.reader.Read(buffer)
-}
-
-func (r *file) ReadAll() ([]byte, error) {
-	return ioutil.ReadAll(r.reader)
-}
-
-func (r *file) Bytes() []byte {
-	if b, err := ioutil.ReadAll(r.reader); err == nil {
-		return b
-	}
-	return make([]byte, 0)
-}
-`)
 }
 
 func (e *EmbedService) loadFile(filename string) ([]byte, string, error) {
@@ -229,4 +162,15 @@ func (e *EmbedService) loadFile(filename string) ([]byte, string, error) {
 	md5sum := md5.New()
 	md5sum.Write(buf)
 	return buf, hex.EncodeToString(md5sum.Sum(nil)), nil
+}
+
+func (e *EmbedService) formatBytes(data []byte) string {
+	if len(data) <= 0 {
+		return "[]byte{}"
+	}
+	buf := bytes.NewBufferString(fmt.Sprintf("0x%02X", data[0]))
+	for i := 1; i < len(data); i++ {
+		fmt.Fprintf(buf, ", 0x%02X", data[i])
+	}
+	return fmt.Sprintf("[]byte{%s}", buf.String())
 }
