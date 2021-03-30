@@ -5,15 +5,7 @@ import (
 	"io"
 )
 
-var tplFileReader = `var (
-	_ffffffffffffffffffffffffffffffff = make([]byte, 0)
-)
-
-func bufferReader(b []byte) io.Reader {
-	return bytes.NewReader(b)
-}
-
-type file struct {
+var tplFileReader = `type file struct {
 	file   string
 	reader io.Reader
 }
@@ -32,9 +24,15 @@ func (r *file) Bytes() []byte {
 		return make([]byte, 0)
 	}
 	return b
+}
+
+func directReader(b []byte) io.Reader {
+	return bytes.NewReader(b)
 }`
 
-var tplGzipReader = `type emptyBuffer struct {
+var tplGzipReader = `var empty = new(emptyBuffer)
+
+type emptyBuffer struct {
 }
 
 func (b *emptyBuffer) Read([]byte) (int, error) {
@@ -43,12 +41,18 @@ func (b *emptyBuffer) Read([]byte) (int, error) {
 
 func gzipReader(b []byte) io.Reader {
 	r, err := gzip.NewReader(
-		bufferReader(b),
+		bytes.NewReader(b),
 	)
 	if err != nil {
-		return new(emptyBuffer)
+		return empty
 	}
-	return r
+	defer r.Close()
+
+	uncompressed, err := ioutil.ReadAll(r)
+	if err != nil {
+		return empty
+	}
+	return bytes.NewReader(uncompressed)
 }`
 
 type TemplateStmt struct {

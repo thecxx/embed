@@ -68,7 +68,13 @@ func NewCommand() *cobra.Command {
 
 	// Options
 	if flags := cmd.Flags(); flags != nil {
-		flags.StringVarP(&options.BuildCmd.File, "file", "f", "./embed.yaml", "pre-defined configuration file for building")
+		var filename string
+		if wd, err := os.Getwd(); err == nil {
+			filename = fmt.Sprintf("%s/embed.yaml", wd)
+		} else {
+			filename = "./embed.yaml"
+		}
+		flags.StringVarP(&options.BuildCmd.File, "file", "f", filename, "pre-defined configuration file for building")
 	}
 
 	return cmd

@@ -5,18 +5,20 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/thecxx/embed/pkg/embed/asset/options"
+
 	"github.com/thecxx/embed/pkg/embed/service"
 
 	"github.com/spf13/cobra"
 )
 
 func Validate(cmd *cobra.Command, args []string) error {
-	return nil
+	return options.InitCmd.Validate()
 }
 
 func Run(cmd *cobra.Command) error {
 	// Execute init
-	return service.Embed.Init(context.Background(), "embed.yaml")
+	return service.Embed.Init(context.Background(), options.InitCmd.File)
 }
 
 func exitIfError(err error, code int) {
@@ -28,7 +30,7 @@ func exitIfError(err error, code int) {
 
 // NewCommand returns init command.
 func NewCommand() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "",
 		Long:  "",
@@ -38,4 +40,17 @@ func NewCommand() *cobra.Command {
 			exitIfError(Run(cmd), -1)
 		},
 	}
+
+	// Options
+	if flags := cmd.Flags(); flags != nil {
+		var filename string
+		if wd, err := os.Getwd(); err == nil {
+			filename = fmt.Sprintf("%s/embed.yaml", wd)
+		} else {
+			filename = "./embed.yaml"
+		}
+		flags.StringVarP(&options.InitCmd.File, "file", "f", filename, "pre-defined configuration file for building")
+	}
+
+	return cmd
 }

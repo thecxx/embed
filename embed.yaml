@@ -1,17 +1,25 @@
 # embed build [-f embed.yaml]
 ---
-pkg: embed
 
-compress: gz
+# The package name
+pkg: "embed"
 
+# Source file path
+path: "embed/embed.go"
+
+# The compression method for embedded resource, it can be set to [no] [gz|gzip]
+compress: "gz"
+
+# Archive the data to a separate file
 archive: true
 
-path: embed/embed.go
-
+# Resource list
 items:
-  - name: TestFile
-    file: tests/test.txt
+  - name: "TestFile"
+    file: "tests/test.txt"
+    comment: "A test file, \njust for test."
 
-  - name: EmptyFile
-    file: tests/empty.txt
+  - name: "EmptyFile"
+    file: "tests/empty.txt"
+    comment: "An empty file"
 
