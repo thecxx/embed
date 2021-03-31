@@ -12,11 +12,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/thecxx/embed/pkg/embed/asset/embed"
-
-	"github.com/thecxx/embed/pkg/embed/asset/options"
-
 	"github.com/thecxx/embed/pkg/embed/asset/config"
+	"github.com/thecxx/embed/pkg/embed/asset/embed"
+	"github.com/thecxx/embed/pkg/embed/asset/options"
 	"github.com/thecxx/embed/pkg/pack"
 )
 

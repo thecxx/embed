@@ -5,11 +5,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/thecxx/embed/pkg/embed/asset/options"
-
-	"github.com/thecxx/embed/pkg/embed/service"
-
 	"github.com/spf13/cobra"
+	"github.com/thecxx/embed/pkg/embed/asset/options"
+	"github.com/thecxx/embed/pkg/embed/service"
 )
 
 func Validate(cmd *cobra.Command, args []string) error {
