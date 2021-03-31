@@ -1,10 +1,11 @@
 package config
 
 import (
-	"bytes"
+	"encoding/json"
+	"errors"
 
-	"github.com/spf13/viper"
 	"github.com/thecxx/embed/pkg/embed/asset/config/structure"
+	"gopkg.in/yaml.v2"
 )
 
 var (
@@ -18,10 +19,13 @@ func InitEmbedConfig(buffer []byte, format string) error {
 
 // loadConfig loads configuration from the `buffer`, and then save it to `rawVal`.
 func loadConfig(buffer []byte, format string, rawVal interface{}) error {
-	v := viper.New()
-	{
-		v.SetConfigType(format)
-		v.ReadConfig(bytes.NewReader(buffer))
+	switch format {
+	// yaml
+	case "yaml":
+		return yaml.Unmarshal(buffer, rawVal)
+	// json
+	case "json":
+		return json.Unmarshal(buffer, rawVal)
 	}
-	return v.Unmarshal(&rawVal)
+	return errors.New("format not supported")
 }
