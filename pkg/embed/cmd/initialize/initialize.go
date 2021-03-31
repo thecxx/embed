@@ -18,7 +18,7 @@ func Validate(cmd *cobra.Command, args []string) error {
 
 func Run(cmd *cobra.Command) error {
 	// Execute init
-	return service.Embed.Init(context.Background(), options.InitCmd.File)
+	return service.Embed.Init(context.Background())
 }
 
 func exitIfError(err error, code int) {

@@ -10,7 +10,11 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"path"
+	"path/filepath"
+
+	"github.com/thecxx/embed/pkg/embed/asset/embed"
+
+	"github.com/thecxx/embed/pkg/embed/asset/options"
 
 	"github.com/thecxx/embed/pkg/embed/asset/config"
 	"github.com/thecxx/embed/pkg/pack"
@@ -31,9 +35,8 @@ func NewEmbedService() *EmbedService {
 	return new(EmbedService)
 }
 
-func (e *EmbedService) Init(ctx context.Context, file string) error {
-
-	stat, err := os.Stat(file)
+func (e *EmbedService) Init(ctx context.Context) error {
+	stat, err := os.Stat(options.InitCmd.File)
 	if err != nil {
 		if !os.IsNotExist(err) {
 			return err
@@ -45,49 +48,21 @@ func (e *EmbedService) Init(ctx context.Context, file string) error {
 			return errors.New("the config file already exists")
 		}
 	}
-
-	return ioutil.WriteFile(file, ([]byte)(`# embed build [-f embed.yaml]
----
-
-# The package name
-pkg: "embed"
-
-# Source file path
-path: "embed/embed.go"
-
-# The compression method for embedded resource, it can be set to [no] [gz|gzip]
-compress: "gz"
-
-# Archive the data to a separate file
-archive: false
-
-# Resource list
-items:
-  - name: "TestFile"
-    file: "tests/test.txt"
-    comment: "A test file, \njust for test."
-
-  - name: "EmptyFile"
-    file: "tests/empty.txt"
-    comment: "An empty file"
-
-`), 0755)
+	return ioutil.WriteFile(options.InitCmd.File, embed.EmbedYaml.Bytes(), 0755)
 }
 
 func (e *EmbedService) Build(ctx context.Context) error {
 
 	var (
-		compressor = ""
-		datas      = make(map[string][]byte)
-		exports    = make([]pack.Variable, 0)
-		archives   = make([]pack.Variable, 0)
 		sf         = pack.NewSourceFile(config.Embed.Package)
 		af         = pack.NewSourceFile(config.Embed.Package)
+		exports    = make([]pack.Variable, 0)
+		archives   = make([]pack.Variable, 0)
+		compressor = ""
 	)
 
-	sf.Import("bytes")
 	sf.Import("io")
-	sf.Import("io/ioutil")
+	sf.Import("bytes")
 	sf.DeclareFileReader()
 
 	switch config.Embed.Compress {
@@ -103,6 +78,8 @@ func (e *EmbedService) Build(ctx context.Context) error {
 	default:
 		return errors.New("compress method not supported")
 	}
+
+	datas := make(map[string][]byte)
 
 	for _, f := range config.Embed.Items {
 		// Load file
@@ -140,36 +117,28 @@ func (e *EmbedService) Build(ctx context.Context) error {
 		var buf string
 
 		if compress {
-			buf = fmt.Sprintf("%sReader(_%s)", compressor, sign)
+			buf = fmt.Sprintf("%sRead(_%s)", compressor, sign)
 		} else {
-			buf = fmt.Sprintf("directReader(_%s)", sign)
+			buf = fmt.Sprintf("directRead(_%s)", sign)
 		}
 
 		exports = append(exports, pack.Variable{
 			Name:    f.Name,
 			Comment: f.Comment,
-			Assign:  fmt.Sprintf("file{\"%s\", %s}", f.File, buf),
+			Assign:  fmt.Sprintf("item{\"%s\", %s}", f.File, buf),
 		})
 	}
 
-	directory := path.Dir(config.Embed.Path)
-	archfile := directory + "/archive.go"
-
-	// Create the package directory
-	if err := os.MkdirAll(directory, 0755); err != nil {
-		return err
-	}
 	// Clean
-	os.Remove(config.Embed.Path)
-	os.Remove(archfile)
+	e.remove(config.Embed.Path, config.Embed.Archive)
 
 	// Save all data
 	if len(archives) > 0 {
-		if config.Embed.Archive {
+		if len(config.Embed.Archive) > 0 {
 			for _, arch := range archives {
 				af.DeclareVar(arch)
 			}
-			if err := ioutil.WriteFile(archfile, af.Bytes(), 0755); err != nil {
+			if err := e.save(config.Embed.Archive, af, 0755); err != nil {
 				return err
 			}
 		} else {
@@ -182,7 +151,7 @@ func (e *EmbedService) Build(ctx context.Context) error {
 		sf.DeclareVar(exports...)
 	}
 
-	return ioutil.WriteFile(config.Embed.Path, sf.Bytes(), 0755)
+	return e.save(config.Embed.Path, sf, 0755)
 
 }
 
@@ -197,6 +166,32 @@ func (e *EmbedService) loadFile(filename string) ([]byte, string, error) {
 	md5sum := md5.New()
 	md5sum.Write(buf)
 	return buf, hex.EncodeToString(md5sum.Sum(nil)), nil
+}
+
+func (e *EmbedService) remove(files ...string) error {
+	for _, f := range files {
+		_, err := os.Stat(f)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return err
+		}
+		if err := os.Remove(f); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (e *EmbedService) save(file string, src *pack.SourceFile, perm os.FileMode) error {
+	dir := filepath.Dir(file)
+	// Create the package directory
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+	// Create file
+	return ioutil.WriteFile(file, src.Bytes(), perm)
 }
 
 func (e *EmbedService) compressWithGzip(uncompressed []byte) ([]byte, error) {
