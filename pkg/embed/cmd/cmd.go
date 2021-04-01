@@ -7,14 +7,15 @@ import (
 )
 
 var (
-	Version = "0.0.0"
+	Command = "embed"
+	Version = "1.0.0"
 )
 
 // NewCommand returns root command.
 func NewCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Version: Version,
-		Use:     "session",
+		Use:     Command,
 		Short:   "",
 		Long:    "",
 		// EntryPoint
